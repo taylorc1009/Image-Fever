@@ -8,6 +8,11 @@
 #include <ctime>
 #include <cstdlib>
 #include <filesystem>
+#include <unordered_map>
+#include <iostream>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 namespace fs = std::filesystem;
 
@@ -24,10 +29,20 @@ int main()
     std::srand(static_cast<unsigned int>(std::time(NULL)));
 
     // example folder to load images
-    constexpr char* image_folder = "C:/Users/taylo/source/repos/taylorc1009/Image-Fever/unsorted";
+    constexpr char* image_folder = "C:\\Users\\taylo\\source\\repos\\taylorc1009\\Image-Fever\\unsorted";
     std::vector<std::string> imageFilenames;
-    for (auto& p : fs::directory_iterator(image_folder))
-        imageFilenames.push_back(p.path().u8string());
+    std::unordered_map<std::string, std::vector<uint8_t>> images;
+
+	for (auto& p : fs::directory_iterator(image_folder)) {
+        std::string filePath = p.path().u8string();
+        imageFilenames.push_back(filePath);
+
+		int width, height, n; // n is the number of components that you retrieved from the image. 3 if it's RGB only (all JPG images should be 3) or 4 if it's RGBA (e.g. some PNG images)
+		auto imgdata = (char*)stbi_load(filePath.c_str(), &width, &height, &n, 0);
+        std::vector<uint8_t> image_data(imgdata, imgdata + width * height * n);
+        images[filePath] = image_data; //for some reason I can't merge this line with the line above, by bringing the "image_data" constructor here, as it cannot resolve the "image_data" symbol
+        stbi_image_free(imgdata);
+    }
 
     // Define some constants
     const float pi = 3.14159f;
