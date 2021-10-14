@@ -30,3 +30,17 @@
 *.exe
 *.out
 *.app
+
+# CMake Build
+build/.vs/
+build/CMakeFiles/
+build/cw1.dir/
+build/x64/
+*.ilk
+*.pdb
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.sln
+*.cmake
+CMakeCache.txt
