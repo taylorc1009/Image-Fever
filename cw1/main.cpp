@@ -10,11 +10,46 @@
 #include <filesystem>
 #include <unordered_map>
 #include <iostream>
+#include <mutex>
+#include <thread>
+#include <future>
+#include "image.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+// example folder to load images
+#define IMAGES_DIRECTORY "C:\\Users\\taylo\\source\\repos\\taylorc1009\\Image-Fever\\unsorted"
+#define PLACEHOLDER_IMAGE "C:\\Users\\taylo\\source\\repos\\taylorc1009\\Image-Fever\\placeholder.jpg"
+
 namespace fs = std::filesystem;
+
+std::mutex mut;
+
+std::vector<std::string> tokenizeStr(std::string str, std::string delimiter) {
+    size_t pos = 0;
+    std::vector<std::string> tokens;
+
+    while ((pos = str.find(delimiter)) != std::string::npos) {
+        tokens.push_back(str.substr(0, pos));
+        str.erase(0, pos + delimiter.length());
+    }
+
+    return tokens;
+}
+
+void loadImages(std::shared_ptr<std::vector<image>> images, std::string path)
+{
+    int width, height, n; // n is the number of components that you retrieved from the image. 3 if it's RGB only (all JPG images should be 3) or 4 if it's RGBA (e.g. some PNG images)
+    auto imgdata = (char*)stbi_load(path.c_str(), &width, &height, &n, 0);
+
+    std::vector<uint8_t> image_data(imgdata, imgdata + width * height * n);
+
+    std::lock_guard<std::mutex> lock(mut);
+    (*images).push_back(image(path, image_data));
+
+    stbi_image_free(imgdata);
+}
 
 sf::Vector2f ScaleFromDimensions(const sf::Vector2u& textureSize, int screenWidth, int screenHeight)
 {
@@ -24,26 +59,7 @@ sf::Vector2f ScaleFromDimensions(const sf::Vector2u& textureSize, int screenWidt
     return { scale, scale };
 }
 
-int main()
-{
-    std::srand(static_cast<unsigned int>(std::time(NULL)));
-
-    // example folder to load images
-    constexpr char* image_folder = "C:\\Users\\taylo\\source\\repos\\taylorc1009\\Image-Fever\\unsorted";
-    std::vector<std::string> imageFilenames;
-    std::unordered_map<std::string, std::vector<uint8_t>> images;
-
-	for (auto& p : fs::directory_iterator(image_folder)) {
-        std::string filePath = p.path().u8string();
-        imageFilenames.push_back(filePath);
-
-		int width, height, n; // n is the number of components that you retrieved from the image. 3 if it's RGB only (all JPG images should be 3) or 4 if it's RGBA (e.g. some PNG images)
-		auto imgdata = (char*)stbi_load(filePath.c_str(), &width, &height, &n, 0);
-        std::vector<uint8_t> image_data(imgdata, imgdata + width * height * n);
-        images[filePath] = image_data; //for some reason I can't merge this line with the line above, by bringing the "image_data" constructor here, as it cannot resolve the "image_data" symbol
-        stbi_image_free(imgdata);
-    }
-
+int UIThread(std::shared_ptr<std::vector<image>> images) {
     // Define some constants
     const float pi = 3.14159f;
     const int gameWidth = 800;
@@ -53,16 +69,16 @@ int main()
 
     // Create the window of the application
     sf::RenderWindow window(sf::VideoMode(gameWidth, gameHeight, 32), "Image Fever",
-                            sf::Style::Titlebar | sf::Style::Close);
+        sf::Style::Titlebar | sf::Style::Close);
     window.setVerticalSyncEnabled(true);
 
     // Load an image to begin with
     sf::Texture texture;
-    if (!texture.loadFromFile(imageFilenames[imageIndex]))
+    if (!texture.loadFromFile((*images)[imageIndex].getPath()))
         return EXIT_FAILURE;
-    sf::Sprite sprite (texture);
+    sf::Sprite sprite(texture);
     // Make sure the texture fits the screen
-    sprite.setScale(ScaleFromDimensions(texture.getSize(),gameWidth,gameHeight));
+    sprite.setScale(ScaleFromDimensions(texture.getSize(), gameWidth, gameHeight));
 
     sf::Clock clock;
     while (window.isOpen())
@@ -73,18 +89,18 @@ int main()
         {
             // Window closed or escape key pressed: exit
             if ((event.type == sf::Event::Closed) ||
-               ((event.type == sf::Event::KeyPressed) && (event.key.code == sf::Keyboard::Escape)))
+                ((event.type == sf::Event::KeyPressed) && (event.key.code == sf::Keyboard::Escape)))
             {
                 window.close();
                 break;
             }
-            
+
             // Window size changed, adjust view appropriately
             if (event.type == sf::Event::Resized)
             {
                 sf::View view;
                 view.setSize(gameWidth, gameHeight);
-                view.setCenter(gameWidth/2.f, gameHeight/2.f);
+                view.setCenter(gameWidth / 2.f, gameHeight / 2.f);
                 window.setView(view);
             }
 
@@ -93,19 +109,24 @@ int main()
             {
                 // adjust the image index
                 if (event.key.code == sf::Keyboard::Key::Left)
-                    imageIndex = (imageIndex + imageFilenames.size() - 1) % imageFilenames.size();
+                    imageIndex = (imageIndex + (*images).size() - 1) % (*images).size();
                 else if (event.key.code == sf::Keyboard::Key::Right)
-                    imageIndex = (imageIndex + 1) % imageFilenames.size();
-                // get image filename
-                const auto& imageFilename = imageFilenames[imageIndex];
-                // set it as the window title 
-                window.setTitle(imageFilename);
-                // ... and load the appropriate texture, and put it in the sprite
-                if (texture.loadFromFile(imageFilename))
-                {
-                    sprite = sf::Sprite(texture);
-                    sprite.setScale(ScaleFromDimensions(texture.getSize(), gameWidth, gameHeight));
+                    imageIndex = (imageIndex + 1) % (*images).size();
+
+                if (imageIndex < (*images).size()) {
+                    // get image filename
+                    const auto& imageFilename = (*images)[imageIndex].getPath();
+                    // set it as the window title 
+                    window.setTitle(imageFilename);
+                    // ... and load the appropriate texture, and put it in the sprite
+                    if (!texture.loadFromFile(imageFilename))
+                        texture.loadFromFile((std::string)PLACEHOLDER_IMAGE);
                 }
+                else
+                    texture.loadFromFile((std::string)PLACEHOLDER_IMAGE);
+
+                sprite = sf::Sprite(texture);
+                sprite.setScale(ScaleFromDimensions(texture.getSize(), gameWidth, gameHeight));
             }
         }
 
@@ -118,4 +139,20 @@ int main()
     }
 
     return EXIT_SUCCESS;
+}
+
+int main()
+{
+    std::srand(static_cast<unsigned int>(std::time(NULL)));
+
+    std::shared_ptr<std::vector<image>> images = std::make_shared<std::vector<image>>();
+
+    auto numThreads = std::thread::hardware_concurrency();
+    std::vector<std::thread> imageLoadingPool;
+    for (auto& p : fs::directory_iterator(IMAGES_DIRECTORY))
+        imageLoadingPool.push_back(std::thread(loadImages, images, p.path().u8string()));
+
+    std::future<int> UIFuture = std::async(UIThread, images);
+
+    return UIFuture.get();
 }
