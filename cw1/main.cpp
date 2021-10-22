@@ -26,18 +26,6 @@ namespace fs = std::filesystem;
 
 std::mutex mut;
 
-std::vector<std::string> tokenizeStr(std::string str, std::string delimiter) {
-    size_t pos = 0;
-    std::vector<std::string> tokens;
-
-    while ((pos = str.find(delimiter)) != std::string::npos) {
-        tokens.push_back(str.substr(0, pos));
-        str.erase(0, pos + delimiter.length());
-    }
-
-    return tokens;
-}
-
 void loadImages(std::shared_ptr<std::vector<image>> images, std::string path)
 {
     int width, height, n; // n is the number of components that you retrieved from the image. 3 if it's RGB only (all JPG images should be 3) or 4 if it's RGBA (e.g. some PNG images)
@@ -46,9 +34,20 @@ void loadImages(std::shared_ptr<std::vector<image>> images, std::string path)
     std::vector<uint8_t> image_data(imgdata, imgdata + width * height * n);
 
     std::lock_guard<std::mutex> lock(mut);
-    (*images).push_back(image(path, image_data));
+    images->push_back(image(path, image_data));
 
     stbi_image_free(imgdata);
+}
+
+void threadGetHSVs(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images) {
+    for (std::thread& t : (*threadPool))
+        t.join();
+
+    threadPool->clear();
+
+    //for (unsigned int i = 0; i < numThreads; i++)
+    for (auto &img : (*images))
+        threadPool->push_back(std::thread(&image::calculateMedianHSV, img));
 }
 
 sf::Vector2f ScaleFromDimensions(const sf::Vector2u& textureSize, int screenWidth, int screenHeight)
@@ -109,11 +108,11 @@ int UIThread(std::shared_ptr<std::vector<image>> images) {
             {
                 // adjust the image index
                 if (event.key.code == sf::Keyboard::Key::Left)
-                    imageIndex = (imageIndex + (*images).size() - 1) % (*images).size();
+                    imageIndex = (imageIndex + images->size() - 1) % images->size();
                 else if (event.key.code == sf::Keyboard::Key::Right)
-                    imageIndex = (imageIndex + 1) % (*images).size();
+                    imageIndex = (imageIndex + 1) % images->size();
 
-                if (imageIndex < (*images).size()) {
+                if (imageIndex < images->size()) {
                     // get image filename
                     const auto& imageFilename = (*images)[imageIndex].getPath();
                     // set it as the window title 
@@ -147,10 +146,13 @@ int main()
 
     std::shared_ptr<std::vector<image>> images = std::make_shared<std::vector<image>>();
 
-    auto numThreads = std::thread::hardware_concurrency();
-    std::vector<std::thread> imageLoadingPool;
+    std::shared_ptr<std::vector<std::thread>> threadPool = std::make_shared<std::vector<std::thread>>();
     for (auto& p : fs::directory_iterator(IMAGES_DIRECTORY))
-        imageLoadingPool.push_back(std::thread(loadImages, images, p.path().u8string()));
+        threadPool->push_back(std::thread(loadImages, images, p.path().u8string()));
+
+    //auto numThreads = std::thread::hardware_concurrency();
+    
+    threadGetHSVs(threadPool, images);
 
     std::future<int> UIFuture = std::async(UIThread, images);
 

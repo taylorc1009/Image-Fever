@@ -7,6 +7,6 @@ include_directories(../contrib/sfml/include)
 link_directories(../contrib/sfml/lib/Debug)
 link_directories(../contrib/sfml/lib/Release)
 
-add_executable(cw1 main.cpp)
+add_executable(cw1 image.cpp main.cpp)
 
 target_link_libraries(cw1 optimized sfml-system optimized sfml-window optimized sfml-graphics debug sfml-system-d debug sfml-window-d debug sfml-graphics-d)
