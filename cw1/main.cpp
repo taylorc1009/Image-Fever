@@ -39,15 +39,38 @@ void loadImages(std::shared_ptr<std::vector<image>> images, std::string path)
     stbi_image_free(imgdata);
 }
 
-void threadGetHSVs(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images) {
+void threadSortImagesByHSV(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images) {
+    std::cout << "Image Sorting thread started" << std::endl;
+    
+    for (std::thread& t : (*threadPool))
+        t.join();
+}
+
+void threadCalculateHSVs(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images) {
+    std::cout << "Calculate HSVs thread started" << std::endl;
+    
     for (std::thread& t : (*threadPool))
         t.join();
 
     threadPool->clear();
-
-    //for (unsigned int i = 0; i < numThreads; i++)
+    
     for (auto &img : (*images))
         threadPool->push_back(std::thread(&image::calculateMedianHSV, img));
+    
+    std::thread sortByHSVsThread(threadSortImagesByHSV, threadPool, images);
+    sortByHSVsThread.join();
+}
+
+void threadLoadImages(std::shared_ptr<std::vector<image>> images) {
+    std::cout << "Image Loading thread started" << std::endl;
+
+    std::shared_ptr<std::vector<std::thread>> threadPool = std::make_shared<std::vector<std::thread>>();
+
+    for (auto& p : fs::directory_iterator(IMAGES_DIRECTORY))
+        threadPool->push_back(std::thread(loadImages, images, p.path().u8string()));
+    
+    std::thread getHSVsThread(threadCalculateHSVs, threadPool, images);
+    getHSVsThread.join();
 }
 
 sf::Vector2f ScaleFromDimensions(const sf::Vector2u& textureSize, int screenWidth, int screenHeight)
@@ -59,6 +82,8 @@ sf::Vector2f ScaleFromDimensions(const sf::Vector2u& textureSize, int screenWidt
 }
 
 int UIThread(std::shared_ptr<std::vector<image>> images) {
+    std::cout << "UI thread started" << std::endl;
+
     // Define some constants
     const float pi = 3.14159f;
     const int gameWidth = 800;
@@ -70,7 +95,7 @@ int UIThread(std::shared_ptr<std::vector<image>> images) {
     sf::RenderWindow window(sf::VideoMode(gameWidth, gameHeight, 32), "Image Fever",
         sf::Style::Titlebar | sf::Style::Close);
     window.setVerticalSyncEnabled(true);
-
+    
     // Load an image to begin with
     sf::Texture texture;
     if (!texture.loadFromFile((*images)[imageIndex].getPath()))
@@ -146,15 +171,9 @@ int main()
 
     std::shared_ptr<std::vector<image>> images = std::make_shared<std::vector<image>>();
 
-    std::shared_ptr<std::vector<std::thread>> threadPool = std::make_shared<std::vector<std::thread>>();
-    for (auto& p : fs::directory_iterator(IMAGES_DIRECTORY))
-        threadPool->push_back(std::thread(loadImages, images, p.path().u8string()));
-
-    //auto numThreads = std::thread::hardware_concurrency();
-    
-    threadGetHSVs(threadPool, images);
-
     std::future<int> UIFuture = std::async(UIThread, images);
+
+    std::thread loadImagesThread(threadLoadImages, images);
 
     return UIFuture.get();
 }
