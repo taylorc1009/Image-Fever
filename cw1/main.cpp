@@ -34,6 +34,9 @@ void loadImageData(std::shared_ptr<std::vector<image>> images, std::string path)
 
     std::vector<uint8_t> image_data(imgdata, imgdata + width * height * n);
 
+    // this is the only place which the Mutex is applied as the "images" vector is modified here by multiple "loadImageData" threads
+    // the thread for calculating the median hues doesn't modify the list, but the objects inside, which all have only one corresponding thread anyway
+    // the thread for sorting the vector of images uses C++'s "std::sort", which is only running in parallel of the UI thread as I can't parallelise "std::sort" any further
     std::lock_guard<std::mutex> lock(mut);
     images->push_back(image(path, image_data));
 
@@ -184,6 +187,25 @@ int UIThread(std::shared_ptr<std::vector<image>> images) {
     return EXIT_SUCCESS;
 }
 
+void sequentialOperations(std::shared_ptr<std::vector<image>> images) { // the non-parallelised image loading, convertion, and sorting function
+    std::cout << "Sequential Operations function started" << std::endl;
+    
+    auto start = std::chrono::system_clock::now();
+    
+    int i = 0;
+    for (auto& p : fs::directory_iterator(IMAGES_DIRECTORY))
+        loadImageData(images, p.path().u8string());
+
+    for (auto& img : (*images))
+        img.calculateMedianHue();
+    
+    std::sort(images->begin(), images->end(), [](image a, image b) { return a.getMedianHue() < b.getMedianHue(); });
+
+    auto stop = std::chrono::system_clock::now();
+    auto totalTimeOfSequentialOperations = stop - start;
+    std::cout << "Sequential Operations function elapsed time (s): " << std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfSequentialOperations).count() / 1000.0 << std::endl;
+}
+
 int main()
 {
     std::srand(static_cast<unsigned int>(std::time(NULL)));
@@ -192,7 +214,8 @@ int main()
 
     std::future<int> UIFuture = std::async(UIThread, images);
 
-    std::thread loadImagesThread(threadLoadImages, images);
+    //std::thread loadImagesThread(threadLoadImages, images);
+    std::thread sequentialOperationsThread(sequentialOperations, images);
 
     return UIFuture.get();
 }
