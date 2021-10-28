@@ -13,6 +13,7 @@
 #include <mutex>
 #include <thread>
 #include <future>
+#include <chrono>
 #include "image.h"
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -39,38 +40,42 @@ void loadImageData(std::shared_ptr<std::vector<image>> images, std::string path)
     stbi_image_free(imgdata);
 }
 
-void threadSortImagesByHue(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images) {
+void threadSortImagesByHue(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images, std::chrono::system_clock::time_point threadingStart) {
     for (std::thread& t : (*threadPool))
         t.join();
+
+    auto stop = std::chrono::system_clock::now();
+    auto totalTimeOfThreadPool = stop - threadingStart;
+    std::cout << "Calculate Median Hues thread elapsed time (s): " << std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfThreadPool).count() / 1000.0 << std::endl;
 
     threadPool->clear();
 
     std::cout << "Image Sorting thread started" << std::endl;
 
-    std::cout << "Images order pre-sort: " << std::endl;
-    for (image img : (*images))
-        std::cout << img.getPath() << std::endl;
-
     std::sort(images->begin(), images->end(), [](image a, image b) { return a.getMedianHue() < b.getMedianHue(); });
 
-    std::cout << "Images order post-sort: " << std::endl;
-    for (image img : (*images))
-        std::cout << img.getPath() << " " << img.getMedianHue() << std::endl;
+    stop = std::chrono::system_clock::now();
+    auto totalTimeOfSort = stop - threadingStart;
+    std::cout << "Image Sorting thread elapsed time (s): " << std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfThreadPool).count() / 1000.0 << std::endl;
 }
 
-void threadCalculateMedianHues(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images) {
-    std::cout << "Calculate Median Hues thread started" << std::endl;
-    
+void threadCalculateMedianHues(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images, std::chrono::system_clock::time_point threadingStart) {
     for (std::thread& t : (*threadPool))
         t.join();
 
+    auto stop = std::chrono::system_clock::now();
+    auto totalTimeOfThreadPool = stop - threadingStart;
+    std::cout << "Image Loading thread elapsed time (s): " << std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfThreadPool).count() / 1000.0 << std::endl;
+
     threadPool->clear();
     
+    std::cout << "Calculate Median Hues thread started" << std::endl;
+
     for (auto &img : (*images))
         threadPool->push_back(std::thread(&image::calculateMedianHue, std::ref(img)));
     
-    std::thread sortByHSVsThread(threadSortImagesByHue, threadPool, images);
-    sortByHSVsThread.join();
+    std::thread sortByHuesThread(threadSortImagesByHue, threadPool, images, threadingStart);
+    sortByHuesThread.join();
 }
 
 void threadLoadImages(std::shared_ptr<std::vector<image>> images) {
@@ -78,11 +83,13 @@ void threadLoadImages(std::shared_ptr<std::vector<image>> images) {
 
     std::shared_ptr<std::vector<std::thread>> threadPool = std::make_shared<std::vector<std::thread>>();
 
+    auto start = std::chrono::system_clock::now();
+
     for (auto& p : fs::directory_iterator(IMAGES_DIRECTORY))
         threadPool->push_back(std::thread(loadImageData, images, p.path().u8string()));
     
-    std::thread getHSVsThread(threadCalculateMedianHues, threadPool, images);
-    getHSVsThread.join();
+    std::thread getHuesThread(threadCalculateMedianHues, threadPool, images, start);
+    getHuesThread.join();
 }
 
 sf::Vector2f ScaleFromDimensions(const sf::Vector2u& textureSize, int screenWidth, int screenHeight)
