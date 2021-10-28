@@ -26,7 +26,7 @@ namespace fs = std::filesystem;
 
 std::mutex mut;
 
-void loadImages(std::shared_ptr<std::vector<image>> images, std::string path)
+void loadImageData(std::shared_ptr<std::vector<image>> images, std::string path)
 {
     int width, height, n; // n is the number of components that you retrieved from the image. 3 if it's RGB only (all JPG images should be 3) or 4 if it's RGBA (e.g. some PNG images)
     auto imgdata = (char*)stbi_load(path.c_str(), &width, &height, &n, 0);
@@ -39,15 +39,27 @@ void loadImages(std::shared_ptr<std::vector<image>> images, std::string path)
     stbi_image_free(imgdata);
 }
 
-void threadSortImagesByHSV(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images) {
-    std::cout << "Image Sorting thread started" << std::endl;
-    
+void threadSortImagesByHue(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images) {
     for (std::thread& t : (*threadPool))
         t.join();
+
+    threadPool->clear();
+
+    std::cout << "Image Sorting thread started" << std::endl;
+
+    std::cout << "Images order pre-sort: " << std::endl;
+    for (image img : (*images))
+        std::cout << img.getPath() << std::endl;
+
+    std::sort(images->begin(), images->end(), [](image a, image b) { return a.getMedianHue() < b.getMedianHue(); });
+
+    std::cout << "Images order post-sort: " << std::endl;
+    for (image img : (*images))
+        std::cout << img.getPath() << " " << img.getMedianHue() << std::endl;
 }
 
-void threadCalculateHSVs(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images) {
-    std::cout << "Calculate HSVs thread started" << std::endl;
+void threadCalculateMedianHues(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images) {
+    std::cout << "Calculate Median Hues thread started" << std::endl;
     
     for (std::thread& t : (*threadPool))
         t.join();
@@ -55,9 +67,9 @@ void threadCalculateHSVs(std::shared_ptr<std::vector<std::thread>> threadPool, s
     threadPool->clear();
     
     for (auto &img : (*images))
-        threadPool->push_back(std::thread(&image::calculateMedianHSV, img));
+        threadPool->push_back(std::thread(&image::calculateMedianHue, std::ref(img)));
     
-    std::thread sortByHSVsThread(threadSortImagesByHSV, threadPool, images);
+    std::thread sortByHSVsThread(threadSortImagesByHue, threadPool, images);
     sortByHSVsThread.join();
 }
 
@@ -67,9 +79,9 @@ void threadLoadImages(std::shared_ptr<std::vector<image>> images) {
     std::shared_ptr<std::vector<std::thread>> threadPool = std::make_shared<std::vector<std::thread>>();
 
     for (auto& p : fs::directory_iterator(IMAGES_DIRECTORY))
-        threadPool->push_back(std::thread(loadImages, images, p.path().u8string()));
+        threadPool->push_back(std::thread(loadImageData, images, p.path().u8string()));
     
-    std::thread getHSVsThread(threadCalculateHSVs, threadPool, images);
+    std::thread getHSVsThread(threadCalculateMedianHues, threadPool, images);
     getHSVsThread.join();
 }
 

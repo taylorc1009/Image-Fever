@@ -45,9 +45,9 @@ hsv image::rgb2hsv(const rgb in)
     return out;
 }
 
-void image::calculateMedianHSV() {
+void image::calculateMedianHue() {
     std::vector<uint8_t> imgData = this->getImageData();
-    hsv totalHSV = { 0 }, medianHSV = { 0 };
+    std::vector<double> HuesList = std::vector<double>();
 
     for (unsigned int i = 0; i < imgData.size(); i += 3) {
         rgb pixelRGB;
@@ -56,14 +56,20 @@ void image::calculateMedianHSV() {
         pixelRGB.g = imgData[i + 1];
         pixelRGB.b = imgData[i + 2];
 
-        hsv pixelHSV = rgb2hsv(pixelRGB);
-
-        totalHSV.h += pixelHSV.h;
-        totalHSV.s += pixelHSV.s;
-        totalHSV.v += pixelHSV.v;
+        HuesList.push_back(rgb2hsv(pixelRGB).h);
     }
 
-    this->medianHSV.h = totalHSV.h / (imgData.size() / 3);
-    this->medianHSV.s = totalHSV.h / (imgData.size() / 3);
-    this->medianHSV.v = totalHSV.h / (imgData.size() / 3);
+    std::sort(HuesList.begin(), HuesList.end(), [](double a, double b) { return a > b; });
+    
+    double medianHue = HuesList.size() % 2 ? HuesList[HuesList.size() / 2] : (HuesList[HuesList.size() / 2] + HuesList[(HuesList.size() / 2) - 1]) / 2;
+
+    this->medianHue = medianHue;
+
+    //std::cout << "calc" << this->medianHSV.h << ", " << this->medianHSV.s << ", " << this->medianHSV.v << std::endl;
+}
+
+double image::getMedianHue() {
+    //std::cout << this->medianHue << std::endl;
+    double intpart;
+    return this->medianHue == 0 ? NULL : modf((this->medianHue / 360 + 1 / 6), &intpart);
 }
