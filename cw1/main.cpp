@@ -94,6 +94,11 @@ void threadLoadImages(std::shared_ptr<std::vector<image>> images) {
     
     fs::directory_iterator dirItr(IMAGES_DIRECTORY), endItr;
     for (unsigned int i = 0; i < std::thread::hardware_concurrency() - 1 && dirItr != endItr; i++, dirItr++) { // minus 1 thread to leave it for the UI
+        // I tried to combine "std::thread(&image::calculateMedianHue, std::ref(images->at(imagesProcessed)" from "threadCalculateMedianHues" with this thread
+        // The purpose of this was that an image's median hue could be calculated as soon as the image is loaded
+        // But, the class method "image::calculateMedianHue" cannot be invoked until the image is loaded and an object is constructed
+        // Because of this, if "image::calculateMedianHue" is invoked here, there is no way to specify which object to invoke it on without waiting until it's loaded (by joining the thread)
+        // Therefore, combining "threadCalculateMedianHues" with this function wouldn't make a difference as we'd still need to wait
         threadPool->push_back(std::thread(loadImageData, images, dirItr->path().u8string()));
 
         if (i >= std::thread::hardware_concurrency() - 2) { // prevents thrashing of the CPU - minus 2 instead of 1 to leave one thread for the UI
