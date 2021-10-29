@@ -50,7 +50,7 @@ void threadSortImagesByHue(std::shared_ptr<std::vector<std::thread>> threadPool,
 
     auto stop = std::chrono::system_clock::now();
     auto totalTimeOfSort = stop - threadingStart;
-    std::cout << "Image Sorting thread elapsed time (s): " << std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfSort).count() / 1000.0 << std::endl;
+    std::cout << "Image Sorting thread elapsed time: " << std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfSort).count() / 1000.0 << "s" << std::endl;
 }
 
 void threadCalculateMedianHues(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images, std::chrono::system_clock::time_point threadingStart) {    
@@ -70,15 +70,13 @@ void threadCalculateMedianHues(std::shared_ptr<std::vector<std::thread>> threadP
             threadPool->clear();
         }
     }
-
     for (std::thread& t : (*threadPool))
         t.join();
+    threadPool->clear();
 
     auto stop = std::chrono::system_clock::now();
     auto totalTimeOfThreadPool = stop - threadingStart;
-    std::cout << "Calculate Median Hues thread elapsed time (s): " << std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfThreadPool).count() / 1000.0 << std::endl;
-
-    threadPool->clear();
+    std::cout << "Calculate Median Hues thread elapsed time: " << std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfThreadPool).count() / 1000.0 << "s" << std::endl;
 
     //for (auto &img : (*images))
     //    threadPool->push_back(std::thread(&image::calculateMedianHue, std::ref(img)));
@@ -95,8 +93,7 @@ void threadLoadImages(std::shared_ptr<std::vector<image>> images) {
     auto start = std::chrono::system_clock::now();
     
     fs::directory_iterator dirItr(IMAGES_DIRECTORY), endItr;
-    unsigned int i = 0;
-    for (; i < std::thread::hardware_concurrency() - 1 && dirItr != endItr; i++, dirItr++) { // minus 1 thread to leave it for the UI
+    for (unsigned int i = 0; i < std::thread::hardware_concurrency() - 1 && dirItr != endItr; i++, dirItr++) { // minus 1 thread to leave it for the UI
         threadPool->push_back(std::thread(loadImageData, images, dirItr->path().u8string()));
 
         if (i >= std::thread::hardware_concurrency() - 2) { // prevents thrashing of the CPU - minus 2 instead of 1 to leave one thread for the UI
@@ -107,15 +104,13 @@ void threadLoadImages(std::shared_ptr<std::vector<image>> images) {
             threadPool->clear();
         }
     }
-
     for (std::thread& t : (*threadPool))
         t.join();
+    threadPool->clear();
 
     auto stop = std::chrono::system_clock::now();
     auto totalTimeOfThreadPool = stop - start;
-    std::cout << "Image Loading thread elapsed time (s): " << std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfThreadPool).count() / 1000.0 << std::endl;
-
-    threadPool->clear();
+    std::cout << "Image Loading thread elapsed time: " << std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfThreadPool).count() / 1000.0 << "s" << std::endl;
 
     //for (auto& p : fs::directory_iterator(IMAGES_DIRECTORY))
     //    threadPool->push_back(std::thread(loadImageData, images, p.path().u8string()));
