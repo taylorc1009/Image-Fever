@@ -44,6 +44,33 @@ void loadImageData(std::shared_ptr<std::vector<image>> images, std::string path)
 }
 
 void threadSortImagesByHue(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images, std::chrono::system_clock::time_point threadingStart) {
+    std::cout << "Image Sorting thread started" << std::endl;
+
+    std::sort(images->begin(), images->end(), [](image a, image b) { return a.getMedianHue() < b.getMedianHue(); });
+
+    auto stop = std::chrono::system_clock::now();
+    auto totalTimeOfSort = stop - threadingStart;
+    std::cout << "Image Sorting thread elapsed time (s): " << std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfSort).count() / 1000.0 << std::endl;
+}
+
+void threadCalculateMedianHues(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images, std::chrono::system_clock::time_point threadingStart) {    
+    std::cout << "Calculate Median Hues thread started" << std::endl;
+
+    unsigned int imagesProcessed = 0;
+    for (unsigned int i = 0; i < std::thread::hardware_concurrency() - 1 && imagesProcessed < images->size(); i++) { // minus 1 thread to leave it for the UI
+        threadPool->push_back(std::thread(&image::calculateMedianHue, std::ref(images->at(imagesProcessed))));
+        imagesProcessed++;
+
+        if (i >= std::thread::hardware_concurrency() - 2) { // prevents thrashing of the CPU - minus 2 instead of 1 to leave one thread for the UI
+            //if (imagesProcessed < images->size())
+            i = 0;
+
+            for (std::thread& t : (*threadPool))
+                t.join();
+            threadPool->clear();
+        }
+    }
+
     for (std::thread& t : (*threadPool))
         t.join();
 
@@ -53,29 +80,8 @@ void threadSortImagesByHue(std::shared_ptr<std::vector<std::thread>> threadPool,
 
     threadPool->clear();
 
-    std::cout << "Image Sorting thread started" << std::endl;
-
-    std::sort(images->begin(), images->end(), [](image a, image b) { return a.getMedianHue() < b.getMedianHue(); });
-
-    stop = std::chrono::system_clock::now();
-    auto totalTimeOfSort = stop - threadingStart;
-    std::cout << "Image Sorting thread elapsed time (s): " << std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfThreadPool).count() / 1000.0 << std::endl;
-}
-
-void threadCalculateMedianHues(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images, std::chrono::system_clock::time_point threadingStart) {
-    for (std::thread& t : (*threadPool))
-        t.join();
-
-    auto stop = std::chrono::system_clock::now();
-    auto totalTimeOfThreadPool = stop - threadingStart;
-    std::cout << "Image Loading thread elapsed time (s): " << std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfThreadPool).count() / 1000.0 << std::endl;
-
-    threadPool->clear();
-    
-    std::cout << "Calculate Median Hues thread started" << std::endl;
-
-    for (auto &img : (*images))
-        threadPool->push_back(std::thread(&image::calculateMedianHue, std::ref(img)));
+    //for (auto &img : (*images))
+    //    threadPool->push_back(std::thread(&image::calculateMedianHue, std::ref(img)));
     
     std::thread sortByHuesThread(threadSortImagesByHue, threadPool, images, threadingStart);
     sortByHuesThread.join();
@@ -87,9 +93,32 @@ void threadLoadImages(std::shared_ptr<std::vector<image>> images) {
     std::shared_ptr<std::vector<std::thread>> threadPool = std::make_shared<std::vector<std::thread>>();
 
     auto start = std::chrono::system_clock::now();
+    
+    fs::directory_iterator dirItr(IMAGES_DIRECTORY), endItr;
+    unsigned int i = 0;
+    for (; i < std::thread::hardware_concurrency() - 1 && dirItr != endItr; i++, dirItr++) { // minus 1 thread to leave it for the UI
+        threadPool->push_back(std::thread(loadImageData, images, dirItr->path().u8string()));
 
-    for (auto& p : fs::directory_iterator(IMAGES_DIRECTORY))
-        threadPool->push_back(std::thread(loadImageData, images, p.path().u8string()));
+        if (i >= std::thread::hardware_concurrency() - 2) { // prevents thrashing of the CPU - minus 2 instead of 1 to leave one thread for the UI
+            i = 0;
+
+            for (std::thread& t : (*threadPool))
+                t.join();
+            threadPool->clear();
+        }
+    }
+
+    for (std::thread& t : (*threadPool))
+        t.join();
+
+    auto stop = std::chrono::system_clock::now();
+    auto totalTimeOfThreadPool = stop - start;
+    std::cout << "Image Loading thread elapsed time (s): " << std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfThreadPool).count() / 1000.0 << std::endl;
+
+    threadPool->clear();
+
+    //for (auto& p : fs::directory_iterator(IMAGES_DIRECTORY))
+    //    threadPool->push_back(std::thread(loadImageData, images, p.path().u8string()));
     
     std::thread getHuesThread(threadCalculateMedianHues, threadPool, images, start);
     getHuesThread.join();
@@ -214,8 +243,8 @@ int main()
 
     std::future<int> UIFuture = std::async(UIThread, images);
 
-    //std::thread loadImagesThread(threadLoadImages, images);
-    std::thread sequentialOperationsThread(sequentialOperations, images);
+    std::thread loadImagesThread(threadLoadImages, images);
+    //std::thread sequentialOperationsThread(sequentialOperations, images);
 
     return UIFuture.get();
 }
