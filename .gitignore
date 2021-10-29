@@ -36,6 +36,7 @@ build/.vs/
 build/CMakeFiles/
 build/cw1.dir/
 build/x64/
+build/Debug/
 *.ilk
 *.pdb
 *.vcxproj
