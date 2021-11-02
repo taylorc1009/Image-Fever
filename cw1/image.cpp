@@ -49,9 +49,10 @@ void image::calculateMedianHue() {
     std::vector<uint8_t> imgData = this->getImageData();
     std::vector<double> HuesList = std::vector<double>();
 
-    // this for loop is very time consuming as there are a lot of pixels in each image
-    // however, there is no point parallelising it as that would mean we could only have one "image::calculateMedianHue()" thread running at a time to prevent CPU thrashing
-    // therefore, in theory, if we did parallelise it, it would take just as long, if not longer to finish
+    /* This for loop is very time consuming as there are a lot of pixels in each image
+     * However, there is no point parallelising it as that would mean we could only have one "image::calculateMedianHue()" thread running at a time to prevent CPU thrashing
+     * Therefore, in theory, if we did parallelise it, it would take just as long, if not longer to finish
+     */
     for (unsigned int i = 0; i < imgData.size(); i += 3) {
         rgb pixelRGB;
 
