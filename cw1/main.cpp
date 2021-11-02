@@ -28,14 +28,12 @@ void outputTimes(std::shared_ptr<std::vector<std::pair<std::string, std::chrono:
     csv.open("times.csv");
 
     if (csv.is_open()) {
-        std::string functionsString = "", timesString = "";
+        std::string CSVString;
 
-        for (std::pair<std::string, std::chrono::milliseconds>& time : (*times)) {
-            functionsString.append(time.first + ',');
-            timesString.append(std::to_string(time.second.count()) + ',');
-        }
+        for (std::pair<std::string, std::chrono::milliseconds>& time : (*times))
+            CSVString.append(time.first + ',' + std::to_string(time.second.count()) + '\n');
 
-        csv << functionsString << std::endl << timesString << std::endl;
+        csv << CSVString;
 
         csv.close();
     }
