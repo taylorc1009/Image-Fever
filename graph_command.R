@@ -10,6 +10,16 @@ library(ggplot2)
 
 ggplot(data=times, aes(x=V1, y=V2))
   + geom_line()
-  + geom_text(aes(label = V2, vjust = "outward", hjust = "outward"))
-  + xlab("Functions (1 = t_loadImages, 2 = t_calculateMedianHues, 3 = t_sortImagesByHue)")
+  + geom_text(aes(label=V2, vjust="outward", hjust="outward"))
+  + xlab("Parallel Functions (1 = t_loadImages, 2 = t_calculateMedianHues, 3 = t_sortImagesByHue)")
+  + ylab("Time (ms)")
+
+# for the sequential function
+# the only difference is the x-axis label as the sequential function isn't split into separate functions
+# so the three major operations can't be identified by their function name
+
+ggplot(data=times, aes(x=V1, y=V2))
+  + geom_line()
+  + geom_text(aes(label=V2, vjust="outward", hjust="outward"))
+  + xlab("Sequential Function stages (1 = Load Images, 2 = Calculate Median Hues, 3 = Sort Images by Hue)")
   + ylab("Time (ms)")
