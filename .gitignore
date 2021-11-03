@@ -45,3 +45,6 @@ build/Debug/
 *.sln
 *.cmake
 CMakeCache.txt
+
+# Program files
+times.csv

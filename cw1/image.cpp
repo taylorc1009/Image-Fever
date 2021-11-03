@@ -49,9 +49,10 @@ void image::calculateMedianHue() {
     std::vector<uint8_t> imgData = this->getImageData();
     std::vector<double> HuesList = std::vector<double>();
 
-    // this for loop is very time consuming as there are a lot of pixels in each image
-    // however, there is no point parallelising it as that would mean we could only have one "image::calculateMedianHue()" thread running at a time to prevent CPU thrashing
-    // therefore, in theory, if we did parallelise it, it would take just as long, if not longer to finish
+    /* This for loop is very time consuming as there are a lot of pixels in each image
+     * However, there is no point parallelising it as that would mean we could only have one "image::calculateMedianHue()" thread running at a time to prevent CPU thrashing
+     * Therefore, in theory, if we did parallelise it, it would take just as long, if not longer to finish
+     */
     for (unsigned int i = 0; i < imgData.size(); i += 3) {
         rgb pixelRGB;
 
@@ -64,15 +65,13 @@ void image::calculateMedianHue() {
 
     std::sort(HuesList.begin(), HuesList.end(), [](double a, double b) { return a > b; });
     
-    double medianHue = HuesList.size() % 2 ? HuesList[HuesList.size() / 2] : (HuesList[HuesList.size() / 2] + HuesList[(HuesList.size() / 2) - 1]) / 2;
+    size_t size = HuesList.size();
+    double medianHue = size % 2 ? HuesList[size / 2] : (HuesList[size / 2] + HuesList[size / 2 - 1]) / 2;
 
     this->medianHue = medianHue;
-
-    //std::cout << "calc" << this->medianHSV.h << ", " << this->medianHSV.s << ", " << this->medianHSV.v << std::endl;
 }
 
 double image::getMedianHue() {
-    //std::cout << this->medianHue << std::endl;
     double intpart;
     return this->medianHue == 0 ? NULL : modf((this->medianHue / 360 + 1 / 6), &intpart);
 }
