@@ -65,15 +65,13 @@ void image::calculateMedianHue() {
 
     std::sort(HuesList.begin(), HuesList.end(), [](double a, double b) { return a > b; });
     
-    double medianHue = HuesList.size() % 2 ? HuesList[HuesList.size() / 2] : (HuesList[HuesList.size() / 2] + HuesList[(HuesList.size() / 2) - 1]) / 2;
+    size_t size = HuesList.size();
+    double medianHue = size % 2 ? HuesList[size / 2] : (HuesList[size / 2] + HuesList[size / 2 - 1]) / 2;
 
     this->medianHue = medianHue;
-
-    //std::cout << "calc" << this->medianHSV.h << ", " << this->medianHSV.s << ", " << this->medianHSV.v << std::endl;
 }
 
 double image::getMedianHue() {
-    //std::cout << this->medianHue << std::endl;
     double intpart;
     return this->medianHue == 0 ? NULL : modf((this->medianHue / 360 + 1 / 6), &intpart);
 }
