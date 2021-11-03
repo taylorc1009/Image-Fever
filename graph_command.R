@@ -1,3 +1,6 @@
+# load ggplot2
+library(ggplot2)
+
 # command to get a graph of the function times
 # in the CSV file, the function names should be changed to:
 #   t_loadImages = 1
