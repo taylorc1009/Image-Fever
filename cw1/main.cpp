@@ -76,7 +76,7 @@ void t_calculateMedianHues(std::shared_ptr<std::vector<std::thread>> threadPool,
     std::cout << "Calculate Median Hues thread started" << std::endl;
 
     unsigned int imagesProcessed = 0;
-    for (unsigned int i = 0; i < std::thread::hardware_concurrency() - 1 && imagesProcessed < images->size(); i++) { // minus 1 thread to leave it for the UI
+    for (unsigned int i = 0; i < std::thread::hardware_concurrency() - 1 && imagesProcessed < images->size(); i++) { // minus 1 to leave a thread for the UI
         threadPool->push_back(std::thread(&image::calculateMedianHue, std::ref(images->at(imagesProcessed))));
         imagesProcessed++;
 
@@ -112,7 +112,7 @@ void t_loadImages(std::shared_ptr<std::vector<image>> images, std::shared_ptr<st
     auto start = std::chrono::system_clock::now();
     
     fs::directory_iterator dirItr(IMAGES_DIRECTORY), endItr;
-    for (unsigned int i = 0; i < std::thread::hardware_concurrency() - 1 && dirItr != endItr; i++, dirItr++) { // minus 1 thread to leave it for the UI
+    for (unsigned int i = 0; i < std::thread::hardware_concurrency() - 1 && dirItr != endItr; i++, dirItr++) { // minus 1 to leave a thread for the UI
         /* I tried to combine "std::thread(&image::calculateMedianHue, std::ref(images->at(imagesProcessed)" from "t_calculateMedianHues" with this thread
          * The purpose of this was that an image's median hue could be calculated as soon as the image is loaded
          * But, the class method "image::calculateMedianHue" cannot be invoked until the image is loaded and an object is constructed
