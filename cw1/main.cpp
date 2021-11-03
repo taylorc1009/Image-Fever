@@ -23,15 +23,16 @@ namespace fs = std::filesystem;
 
 std::mutex mut;
 
-void outputTimes(std::shared_ptr<std::vector<std::pair<std::string, std::chrono::milliseconds>>> times) {
+void outputTimes(std::shared_ptr<std::vector<std::chrono::milliseconds>> times) {
     std::ofstream csv;
     csv.open("times.csv");
 
     if (csv.is_open()) {
         std::string CSVString;
 
-        for (std::pair<std::string, std::chrono::milliseconds>& time : (*times))
-            CSVString.append(time.first + ',' + std::to_string(time.second.count()) + '\n');
+        unsigned int i = 1;
+        for (std::chrono::milliseconds& time : (*times))
+            CSVString.append(std::to_string(i++) + ',' + std::to_string(time.count()) + '\n');
 
         csv << CSVString;
 
@@ -58,7 +59,7 @@ void loadImageData(std::shared_ptr<std::vector<image>> images, std::string path)
     stbi_image_free(imgdata);
 }
 
-void t_sortImagesByHue(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images, std::shared_ptr<std::vector<std::pair<std::string, std::chrono::milliseconds>>> times, std::chrono::system_clock::time_point threadingStart) {
+void t_sortImagesByHue(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images, std::shared_ptr<std::vector<std::chrono::milliseconds>> times, std::chrono::system_clock::time_point threadingStart) {
     std::cout << "Image Sorting thread started" << std::endl;
 
     std::sort(images->begin(), images->end(), [](image a, image b) { return a.getMedianHue() < b.getMedianHue(); });
@@ -69,10 +70,10 @@ void t_sortImagesByHue(std::shared_ptr<std::vector<std::thread>> threadPool, std
     std::chrono::milliseconds time = std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfSort);
     std::cout << "Image Sorting thread elapsed time: " << time.count() / 1000.0 << "s" << std::endl;
 
-    times->push_back(std::make_pair("t_sortImagesByHue", time));
+    times->push_back(time);
 }
 
-void t_calculateMedianHues(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images, std::shared_ptr<std::vector<std::pair<std::string, std::chrono::milliseconds>>> times, std::chrono::system_clock::time_point threadingStart) {
+void t_calculateMedianHues(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images, std::shared_ptr<std::vector<std::chrono::milliseconds>> times, std::chrono::system_clock::time_point threadingStart) {
     std::cout << "Calculate Median Hues thread started" << std::endl;
 
     unsigned int imagesProcessed = 0;
@@ -98,13 +99,13 @@ void t_calculateMedianHues(std::shared_ptr<std::vector<std::thread>> threadPool,
     std::chrono::milliseconds time = std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfThreadPool);
     std::cout << "Calculate Median Hues thread elapsed time: " << time.count() / 1000.0 << "s" << std::endl;
 
-    times->push_back(std::make_pair("t_calculateMedianHues", time));
+    times->push_back(time);
     
     std::thread sortByHuesThread(t_sortImagesByHue, threadPool, images, times, threadingStart);
     sortByHuesThread.join();
 }
 
-void t_loadImages(std::shared_ptr<std::vector<image>> images, std::shared_ptr<std::vector<std::pair<std::string, std::chrono::milliseconds>>> times) {
+void t_loadImages(std::shared_ptr<std::vector<image>> images, std::shared_ptr<std::vector<std::chrono::milliseconds>> times) {
     std::cout << "Image Loading thread started" << std::endl;
 
     std::shared_ptr<std::vector<std::thread>> threadPool = std::make_shared<std::vector<std::thread>>();
@@ -139,7 +140,7 @@ void t_loadImages(std::shared_ptr<std::vector<image>> images, std::shared_ptr<st
     std::chrono::milliseconds time = std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfThreadPool);
     std::cout << "Image Loading thread elapsed time: " << time.count() / 1000.0 << "s" << std::endl;
 
-    times->push_back(std::make_pair("t_loadImages", time));
+    times->push_back(time);
     
     std::thread getHuesThread(t_calculateMedianHues, threadPool, images, times, start);
     getHuesThread.join();
@@ -239,7 +240,7 @@ int UIThread(std::shared_ptr<std::vector<image>> images) {
     return EXIT_SUCCESS;
 }
 
-void sequentialOperations(std::shared_ptr<std::vector<image>> images, std::shared_ptr<std::vector<std::pair<std::string, std::chrono::milliseconds>>> times) { // the non-parallelised image loading, convertion, and sorting function
+void sequentialOperations(std::shared_ptr<std::vector<image>> images, std::shared_ptr<std::vector<std::chrono::milliseconds>> times) { // the non-parallelised image loading, convertion, and sorting function
     std::cout << "Sequential Operations function started" << std::endl;
     
     auto start = std::chrono::system_clock::now();
@@ -248,18 +249,36 @@ void sequentialOperations(std::shared_ptr<std::vector<image>> images, std::share
     for (auto& p : fs::directory_iterator(IMAGES_DIRECTORY))
         loadImageData(images, p.path().u8string());
 
+    auto stop = std::chrono::system_clock::now();
+    auto timeElapsed = stop - start;
+
+    std::chrono::milliseconds time = std::chrono::duration_cast<std::chrono::milliseconds>(timeElapsed);
+    std::cout << "Sequential Operations function, Load Images elapsed time (s): " << time.count() / 1000.0 << std::endl;
+
+    times->push_back(time);
+
+
     for (auto& img : (*images))
         img.calculateMedianHue();
+
+    stop = std::chrono::system_clock::now();
+    timeElapsed = stop - start;
+
+    time = std::chrono::duration_cast<std::chrono::milliseconds>(timeElapsed);
+    std::cout << "Sequential Operations function, Calculate Median Hues elapsed time (s): " << time.count() / 1000.0 << std::endl;
+
+    times->push_back(time);
     
     std::sort(images->begin(), images->end(), [](image a, image b) { return a.getMedianHue() < b.getMedianHue(); });
 
-    auto stop = std::chrono::system_clock::now();
-    auto totalTimeOfSequentialOperations = stop - start;
+    stop = std::chrono::system_clock::now();
+    timeElapsed = stop - start;
 
-    std::chrono::milliseconds time = std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfSequentialOperations);
-    std::cout << "Sequential Operations function elapsed time (s): " << time.count() / 1000.0 << std::endl;
+    time = std::chrono::duration_cast<std::chrono::milliseconds>(timeElapsed);
+    std::cout << "Sequential Operations function, Image Sorting elapsed time (s): " << time.count() / 1000.0 << std::endl;
 
-    times->push_back(std::make_pair("sequentialOperations", time));
+    times->push_back(time);
+
     outputTimes(times);
 }
 
@@ -267,7 +286,7 @@ int main()
 {
     std::srand(static_cast<unsigned int>(std::time(NULL)));
 
-    std::shared_ptr<std::vector<std::pair<std::string, std::chrono::milliseconds>>> times = std::make_shared<std::vector<std::pair<std::string, std::chrono::milliseconds>>>(); // a vector to store the list of times that will be outputted to a CSV
+    std::shared_ptr<std::vector<std::chrono::milliseconds>> times = std::make_shared<std::vector<std::chrono::milliseconds>>(); // a vector to store the list of times that will be outputted to a CSV
 
     std::shared_ptr<std::vector<image>> images = std::make_shared<std::vector<image>>();
 
