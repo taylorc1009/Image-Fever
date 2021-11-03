@@ -7,5 +7,6 @@
 
 ggplot(data=times, aes(x=V1, y=V2))
   + geom_line()
+  + geom_text(aes(label = V2, vjust = "outward", hjust = "outward"))
   + xlab("Functions (1 = t_loadImages, 2 = t_calculateMedianHues, 3 = t_sortImagesByHue)")
   + ylab("Time (ms)")
