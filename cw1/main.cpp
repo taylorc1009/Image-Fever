@@ -76,14 +76,11 @@ void t_sortImagesByHue(std::shared_ptr<std::vector<std::thread>> threadPool, std
 void t_calculateMedianHues(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images, std::shared_ptr<std::vector<std::chrono::milliseconds>> times, std::chrono::system_clock::time_point threadingStart) {
     std::cout << "Calculate Median Hues thread started" << std::endl;
 
-    unsigned int imagesProcessed = 0;
-    for (unsigned int i = 0; i < std::thread::hardware_concurrency() - 1 && imagesProcessed < images->size(); i++) { // minus 1 to leave a thread for the UI
-        threadPool->push_back(std::thread(&image::calculateMedianHue, std::ref(images->at(imagesProcessed))));
-        imagesProcessed++;
+    for (unsigned int i = 0; i < images->size(); i++) { // minus 1 to leave a thread for the UI
+        threadPool->push_back(std::thread(&image::calculateMedianHue, std::ref(images->at(i))));
 
-        if (i >= std::thread::hardware_concurrency() - 2) { // prevents thrashing of the CPU - minus 2 instead of 1 to leave one thread for the UI
-            i = 0;
-
+        // prevents thrashing of the CPU; if the amount of threads in the thread pool is reaching the number of threads in the system hardware, then join each thread until the pool is empty
+        if (threadPool->size() >= std::thread::hardware_concurrency() - 2) { // minus 2 instead of 1 to leave one thread for the UI
             for (std::thread& t : (*threadPool))
                 t.join();
             threadPool->clear();
@@ -112,8 +109,8 @@ void t_loadImages(std::shared_ptr<std::vector<image>> images, std::shared_ptr<st
 
     auto start = std::chrono::system_clock::now();
     
-    fs::directory_iterator dirItr(IMAGES_DIRECTORY), endItr;
-    for (unsigned int i = 0; i < std::thread::hardware_concurrency() - 1 && dirItr != endItr; i++, dirItr++) { // minus 1 to leave a thread for the UI
+    
+    for (fs::directory_iterator dirItr(IMAGES_DIRECTORY), endItr; dirItr != endItr; dirItr++) { // minus 1 to leave a thread for the UI
         /* I tried to combine "std::thread(&image::calculateMedianHue, std::ref(images->at(imagesProcessed)" from "t_calculateMedianHues" with this thread
          * The purpose of this was that an image's median hue could be calculated as soon as the image is loaded
          * But, the class method "image::calculateMedianHue" cannot be invoked until the image is loaded and an object is constructed
@@ -122,9 +119,8 @@ void t_loadImages(std::shared_ptr<std::vector<image>> images, std::shared_ptr<st
          */
         threadPool->push_back(std::thread(loadImageData, images, dirItr->path().u8string()));
 
-        if (i >= std::thread::hardware_concurrency() - 2) { // prevents thrashing of the CPU - minus 2 instead of 1 to leave one thread for the UI
-            i = 0;
-
+        // prevents thrashing of the CPU; if the amount of threads in the thread pool is reaching the number of threads in the system hardware, then join each thread until the pool is empty
+        if (threadPool->size() >= std::thread::hardware_concurrency() - 2) { // minus 2 instead of 1 to leave one thread for the UI
             for (std::thread& t : (*threadPool))
                 t.join();
             threadPool->clear();
