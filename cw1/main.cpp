@@ -1,8 +1,3 @@
-// This is a chopped Pong example from SFML examples
-
-////////////////////////////////////////////////////////////
-// Headers
-////////////////////////////////////////////////////////////
 #include <SFML/Graphics.hpp>
 #include <cmath>
 #include <ctime>
@@ -14,6 +9,7 @@
 #include <thread>
 #include <future>
 #include <chrono>
+#include <fstream>
 #include "image.h"
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -27,6 +23,25 @@ namespace fs = std::filesystem;
 
 std::mutex mut;
 
+void outputTimes(std::shared_ptr<std::vector<std::chrono::milliseconds>> times) {
+    std::ofstream csv;
+    csv.open("times.csv");
+
+    if (csv.is_open()) {
+        std::string CSVString;
+
+        unsigned int i = 1;
+        for (std::chrono::milliseconds& time : (*times))
+            CSVString.append(std::to_string(i++) + ',' + std::to_string(time.count()) + '\n');
+
+        csv << CSVString;
+
+        csv.close();
+    }
+    else
+        std::cout << "(!) failed to open/create CSV file" << std::endl;
+}
+
 void loadImageData(std::shared_ptr<std::vector<image>> images, std::string path)
 {
     int width, height, n; // n is the number of components that you retrieved from the image. 3 if it's RGB only (all JPG images should be 3) or 4 if it's RGBA (e.g. some PNG images)
@@ -34,37 +49,38 @@ void loadImageData(std::shared_ptr<std::vector<image>> images, std::string path)
 
     std::vector<uint8_t> image_data(imgdata, imgdata + width * height * n);
 
-    // this is the only place which the Mutex is applied as the "images" vector is modified here by multiple "loadImageData" threads
-    // the thread for calculating the median hues doesn't modify the list, but the objects inside, which all have only one corresponding thread anyway
-    // the thread for sorting the vector of images uses C++'s "std::sort", which is only running in parallel of the UI thread as I can't parallelise "std::sort" any further
+    /* This is the only place which the Mutex is applied as the "images" vector is modified here by multiple "loadImageData" threads
+     * The thread for calculating the median hues doesn't modify the list, but the objects inside, which all have only one corresponding thread anyway
+     * The thread for sorting the vector of images uses C++'s "std::sort", which is only running in parallel of the UI thread as I can't parallelise "std::sort" any further
+     */
     std::lock_guard<std::mutex> lock(mut);
     images->push_back(image(path, image_data));
 
     stbi_image_free(imgdata);
 }
 
-void threadSortImagesByHue(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images, std::chrono::system_clock::time_point threadingStart) {
+void t_sortImagesByHue(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images, std::shared_ptr<std::vector<std::chrono::milliseconds>> times, std::chrono::system_clock::time_point threadingStart) {
     std::cout << "Image Sorting thread started" << std::endl;
 
     std::sort(images->begin(), images->end(), [](image a, image b) { return a.getMedianHue() < b.getMedianHue(); });
 
     auto stop = std::chrono::system_clock::now();
     auto totalTimeOfSort = stop - threadingStart;
-    std::cout << "Image Sorting thread elapsed time: " << std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfSort).count() / 1000.0 << "s" << std::endl;
+
+    std::chrono::milliseconds time = std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfSort);
+    std::cout << "Image Sorting thread elapsed time: " << time.count() / 1000.0 << "s" << std::endl;
+
+    times->push_back(time);
 }
 
-void threadCalculateMedianHues(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images, std::chrono::system_clock::time_point threadingStart) {    
+void t_calculateMedianHues(std::shared_ptr<std::vector<std::thread>> threadPool, std::shared_ptr<std::vector<image>> images, std::shared_ptr<std::vector<std::chrono::milliseconds>> times, std::chrono::system_clock::time_point threadingStart) {
     std::cout << "Calculate Median Hues thread started" << std::endl;
 
-    unsigned int imagesProcessed = 0;
-    for (unsigned int i = 0; i < std::thread::hardware_concurrency() - 1 && imagesProcessed < images->size(); i++) { // minus 1 thread to leave it for the UI
-        threadPool->push_back(std::thread(&image::calculateMedianHue, std::ref(images->at(imagesProcessed))));
-        imagesProcessed++;
+    for (unsigned int i = 0; i < images->size(); i++) { // minus 1 to leave a thread for the UI
+        threadPool->push_back(std::thread(&image::calculateMedianHue, std::ref(images->at(i))));
 
-        if (i >= std::thread::hardware_concurrency() - 2) { // prevents thrashing of the CPU - minus 2 instead of 1 to leave one thread for the UI
-            //if (imagesProcessed < images->size())
-            i = 0;
-
+        // prevents thrashing of the CPU; if the amount of threads in the thread pool is reaching the number of threads in the system hardware, then join each thread until the pool is empty
+        if (threadPool->size() >= std::thread::hardware_concurrency() - 2) { // minus 2 instead of 1 to leave one thread for the UI
             for (std::thread& t : (*threadPool))
                 t.join();
             threadPool->clear();
@@ -76,34 +92,35 @@ void threadCalculateMedianHues(std::shared_ptr<std::vector<std::thread>> threadP
 
     auto stop = std::chrono::system_clock::now();
     auto totalTimeOfThreadPool = stop - threadingStart;
-    std::cout << "Calculate Median Hues thread elapsed time: " << std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfThreadPool).count() / 1000.0 << "s" << std::endl;
 
-    //for (auto &img : (*images))
-    //    threadPool->push_back(std::thread(&image::calculateMedianHue, std::ref(img)));
+    std::chrono::milliseconds time = std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfThreadPool);
+    std::cout << "Calculate Median Hues thread elapsed time: " << time.count() / 1000.0 << "s" << std::endl;
+
+    times->push_back(time);
     
-    std::thread sortByHuesThread(threadSortImagesByHue, threadPool, images, threadingStart);
+    std::thread sortByHuesThread(t_sortImagesByHue, threadPool, images, times, threadingStart);
     sortByHuesThread.join();
 }
 
-void threadLoadImages(std::shared_ptr<std::vector<image>> images) {
+void t_loadImages(std::shared_ptr<std::vector<image>> images, std::shared_ptr<std::vector<std::chrono::milliseconds>> times) {
     std::cout << "Image Loading thread started" << std::endl;
 
     std::shared_ptr<std::vector<std::thread>> threadPool = std::make_shared<std::vector<std::thread>>();
 
     auto start = std::chrono::system_clock::now();
     
-    fs::directory_iterator dirItr(IMAGES_DIRECTORY), endItr;
-    for (unsigned int i = 0; i < std::thread::hardware_concurrency() - 1 && dirItr != endItr; i++, dirItr++) { // minus 1 thread to leave it for the UI
-        // I tried to combine "std::thread(&image::calculateMedianHue, std::ref(images->at(imagesProcessed)" from "threadCalculateMedianHues" with this thread
-        // The purpose of this was that an image's median hue could be calculated as soon as the image is loaded
-        // But, the class method "image::calculateMedianHue" cannot be invoked until the image is loaded and an object is constructed
-        // Because of this, if "image::calculateMedianHue" is invoked here, there is no way to specify which object to invoke it on without waiting until it's loaded (by joining the thread)
-        // Therefore, combining "threadCalculateMedianHues" with this function wouldn't make a difference as we'd still need to wait
+    
+    for (fs::directory_iterator dirItr(IMAGES_DIRECTORY), endItr; dirItr != endItr; dirItr++) { // minus 1 to leave a thread for the UI
+        /* I tried to combine "std::thread(&image::calculateMedianHue, std::ref(images->at(imagesProcessed)" from "t_calculateMedianHues" with this thread
+         * The purpose of this was that an image's median hue could be calculated as soon as the image is loaded
+         * But, the class method "image::calculateMedianHue" cannot be invoked until the image is loaded and an object is constructed
+         * Because of this, if "image::calculateMedianHue" is invoked here, there is no way to specify which object to invoke it on without waiting until it's loaded (by joining the thread)
+         * Therefore, combining "t_calculateMedianHues" with this function wouldn't make a difference as we'd still need to wait
+         */
         threadPool->push_back(std::thread(loadImageData, images, dirItr->path().u8string()));
 
-        if (i >= std::thread::hardware_concurrency() - 2) { // prevents thrashing of the CPU - minus 2 instead of 1 to leave one thread for the UI
-            i = 0;
-
+        // prevents thrashing of the CPU; if the amount of threads in the thread pool is reaching the number of threads in the system hardware, then join each thread until the pool is empty
+        if (threadPool->size() >= std::thread::hardware_concurrency() - 2) { // minus 2 instead of 1 to leave one thread for the UI
             for (std::thread& t : (*threadPool))
                 t.join();
             threadPool->clear();
@@ -115,13 +132,16 @@ void threadLoadImages(std::shared_ptr<std::vector<image>> images) {
 
     auto stop = std::chrono::system_clock::now();
     auto totalTimeOfThreadPool = stop - start;
-    std::cout << "Image Loading thread elapsed time: " << std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfThreadPool).count() / 1000.0 << "s" << std::endl;
 
-    //for (auto& p : fs::directory_iterator(IMAGES_DIRECTORY))
-    //    threadPool->push_back(std::thread(loadImageData, images, p.path().u8string()));
+    std::chrono::milliseconds time = std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfThreadPool);
+    std::cout << "Image Loading thread elapsed time: " << time.count() / 1000.0 << "s" << std::endl;
+
+    times->push_back(time);
     
-    std::thread getHuesThread(threadCalculateMedianHues, threadPool, images, start);
+    std::thread getHuesThread(t_calculateMedianHues, threadPool, images, times, start);
     getHuesThread.join();
+
+    outputTimes(times);
 }
 
 sf::Vector2f ScaleFromDimensions(const sf::Vector2u& textureSize, int screenWidth, int screenHeight)
@@ -216,7 +236,7 @@ int UIThread(std::shared_ptr<std::vector<image>> images) {
     return EXIT_SUCCESS;
 }
 
-void sequentialOperations(std::shared_ptr<std::vector<image>> images) { // the non-parallelised image loading, convertion, and sorting function
+void sequentialOperations(std::shared_ptr<std::vector<image>> images, std::shared_ptr<std::vector<std::chrono::milliseconds>> times) { // the non-parallelised image loading, convertion, and sorting function
     std::cout << "Sequential Operations function started" << std::endl;
     
     auto start = std::chrono::system_clock::now();
@@ -225,26 +245,51 @@ void sequentialOperations(std::shared_ptr<std::vector<image>> images) { // the n
     for (auto& p : fs::directory_iterator(IMAGES_DIRECTORY))
         loadImageData(images, p.path().u8string());
 
+    auto stop = std::chrono::system_clock::now();
+    auto timeElapsed = stop - start;
+
+    std::chrono::milliseconds time = std::chrono::duration_cast<std::chrono::milliseconds>(timeElapsed);
+    std::cout << "Sequential Operations function, Load Images elapsed time (s): " << time.count() / 1000.0 << std::endl;
+
+    times->push_back(time);
+
+
     for (auto& img : (*images))
         img.calculateMedianHue();
+
+    stop = std::chrono::system_clock::now();
+    timeElapsed = stop - start;
+
+    time = std::chrono::duration_cast<std::chrono::milliseconds>(timeElapsed);
+    std::cout << "Sequential Operations function, Calculate Median Hues elapsed time (s): " << time.count() / 1000.0 << std::endl;
+
+    times->push_back(time);
     
     std::sort(images->begin(), images->end(), [](image a, image b) { return a.getMedianHue() < b.getMedianHue(); });
 
-    auto stop = std::chrono::system_clock::now();
-    auto totalTimeOfSequentialOperations = stop - start;
-    std::cout << "Sequential Operations function elapsed time (s): " << std::chrono::duration_cast<std::chrono::milliseconds>(totalTimeOfSequentialOperations).count() / 1000.0 << std::endl;
+    stop = std::chrono::system_clock::now();
+    timeElapsed = stop - start;
+
+    time = std::chrono::duration_cast<std::chrono::milliseconds>(timeElapsed);
+    std::cout << "Sequential Operations function, Image Sorting elapsed time (s): " << time.count() / 1000.0 << std::endl;
+
+    times->push_back(time);
+
+    outputTimes(times);
 }
 
 int main()
 {
     std::srand(static_cast<unsigned int>(std::time(NULL)));
 
+    std::shared_ptr<std::vector<std::chrono::milliseconds>> times = std::make_shared<std::vector<std::chrono::milliseconds>>(); // a vector to store the list of times that will be outputted to a CSV
+
     std::shared_ptr<std::vector<image>> images = std::make_shared<std::vector<image>>();
 
     std::future<int> UIFuture = std::async(UIThread, images);
 
-    std::thread loadImagesThread(threadLoadImages, images);
-    //std::thread sequentialOperationsThread(sequentialOperations, images);
+    std::thread loadImagesThread(t_loadImages, images, times);
+    //std::thread sequentialOperationsThread(sequentialOperations, images, times);
 
     return UIFuture.get();
 }
