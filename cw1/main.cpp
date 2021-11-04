@@ -280,8 +280,6 @@ void sequentialOperations(std::shared_ptr<std::vector<image>> images, std::share
 
 int main()
 {
-    std::srand(static_cast<unsigned int>(std::time(NULL)));
-
     std::shared_ptr<std::vector<std::chrono::milliseconds>> times = std::make_shared<std::vector<std::chrono::milliseconds>>(); // a vector to store the list of times that will be outputted to a CSV
 
     std::shared_ptr<std::vector<image>> images = std::make_shared<std::vector<image>>();
